@@ -1,7 +1,8 @@
 using UnityEngine;
+using System;
 using System.IO.Ports;
 
-public class PotentiometerReading : MonoBehaviour
+public class SerialManager : MonoBehaviour
 {
     SerialPort dataStream = new SerialPort("COM11", 115200);
     public string potentiometerInput;
@@ -33,32 +34,30 @@ public class PotentiometerReading : MonoBehaviour
         {
             try
             {
-                // Updates input every frame
                 potentiometerInput = dataStream.ReadLine(); 
-                Debug.Log("Potentiometer Data: " + potentiometerInput);
+                //Debug.Log("Potentiometer Data: " + potentiometerInput);
                 
-                // Assigning each data value to FingerBending.cs
-                string[] curlData = potentiometerInput.Split(",");
-                int thumbCurl = int.Parse(curlData[0]);
-                int pointerCurl = int.Parse(curlData[1]);
-                int middleCurl = int.Parse(curlData[2]);
-                int ringCurl = int.Parse(curlData[3]);
-                int pinkyCurl = int.Parse(curlData[4]);
+                if (potentiometerInput.StartsWith("POT:"))
+                {
+                    string trimmedInput = potentiometerInput.Substring(4);
+                    string[] curlData = trimmedInput.Split(",");
+                    int[] newCurls = Array.ConvertAll(curlData, int.Parse);
 
-                if (fingers.thumbCurl != thumbCurl)
-                    fingers.thumbCurl = thumbCurl;
+                    if (fingers.thumbCurl != newCurls[0])
+                        fingers.thumbCurl = newCurls[0];
 
-                if (fingers.pointerCurl != pointerCurl)
-                    fingers.pointerCurl = pointerCurl;
+                    if (fingers.pointerCurl != newCurls[1])
+                        fingers.pointerCurl = newCurls[1];
 
-                if (fingers.middleCurl != middleCurl)
-                    fingers.middleCurl = middleCurl;
+                    if (fingers.middleCurl != newCurls[2])
+                        fingers.middleCurl = newCurls[2];
 
-                if (fingers.ringCurl != ringCurl)
-                    fingers.ringCurl = ringCurl;
+                    if (fingers.ringCurl != newCurls[3])
+                        fingers.ringCurl = newCurls[3];
 
-                if (fingers.pinkyCurl != pinkyCurl)
-                    fingers.pinkyCurl = pinkyCurl;
+                    if (fingers.pinkyCurl != newCurls[4])
+                        fingers.pinkyCurl = newCurls[4];
+                }
             }
             catch (System.Exception e)
             {
@@ -79,6 +78,18 @@ public class PotentiometerReading : MonoBehaviour
         if (dataStream != null && dataStream.IsOpen)
         {
             dataStream.Close();
+        }
+    }
+
+    public void SendToArduino(string message) {
+        if (dataStream != null && dataStream.IsOpen) {
+            try {
+                dataStream.Write(message);
+                Debug.Log("SENT " + "\"" + message + "\"" + " to Arduino"); 
+            }
+            catch (Exception e) {
+                Debug.LogError("Failed Arduino Send: " + e.Message);
+            }
         }
     }
 }
