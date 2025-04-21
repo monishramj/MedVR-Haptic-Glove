@@ -1,39 +1,39 @@
 #include <ESP32Servo.h>
 
-// Create the five servos
-Servo thumbservo;
-Servo pointservo;
-Servo middleservo;
-Servo ringservo;
-Servo pinkyservo;
+Servo thumbservo, pointservo, middleservo, ringservo, pinkyservo;
 
-// Pin storage for servos
 int thumbservoPin = 11;
 int pointservoPin = 10;
 int middleservoPin = 9;
 int ringservoPin = 8;
 int pinkyservoPin = 7;
 
-// Pin storage for potentiometers
 int thumbpotPin = A0;
 int pointpotPin = A1;
 int middlepotPin = A2;
 int ringpotPin = A3;
 int pinkypotPin = A4;
 
-// Value storages
 int thumbval, pointval, middleval, ringval, pinkyval;
 int thumbcurl, pointcurl, middlecurl, ringcurl, pinkycurl;
 int offset = 10;
 
-// Previous values for change detection
-int prevThumbcurl = -1;
-int prevPointcurl = -1;
-int prevMiddlecurl = -1;
-int prevRingcurl = -1;
-int prevPinkycurl = -1;
-
 int ADC_Max = 4096;
+
+bool lockThumb = false;
+bool lockPointer = false;
+bool lockMid = false;
+bool lockRing = false;
+bool lockPinky = false;
+
+int thumbLockAngle, pointerLockAngle, midLockAngle, ringLockAngle, pinkyLockAngle;
+
+// Default "rest" positions when not engaged
+const int DEFAULT_THUMB = 0;
+const int DEFAULT_POINT = 0;
+const int DEFAULT_MIDDLE = 0;
+const int DEFAULT_RING = 180; // Flipped around
+const int DEFAULT_PINKY = 180;
 
 void setup()
 {
@@ -56,15 +56,17 @@ void setup()
   ringservo.attach(ringservoPin, 500, 2400);
   pinkyservo.attach(pinkyservoPin, 500, 2400);
 
-  thumbservo.write(0);
-  pointservo.write(0);
-  middleservo.write(0);
-  ringservo.write(180);
-  pinkyservo.write(180);
+  thumbservo.write(DEFAULT_THUMB);
+  pointservo.write(DEFAULT_POINT);
+  middleservo.write(DEFAULT_MIDDLE);
+  ringservo.write(DEFAULT_RING);
+  pinkyservo.write(DEFAULT_PINKY);
 }
 
 void loop()
 {
+  checkSerial();
+    
   // Read potentiometer values
   thumbval  = analogRead(thumbpotPin);
   pointval  = analogRead(pointpotPin);
@@ -86,13 +88,6 @@ void loop()
   ringcurl   = max(0, ringcurl);
   pinkycurl  = max(0, pinkycurl);
 
-  // Only send if any values changed
-  /*if (thumbcurl != prevThumbcurl ||
-      pointcurl != prevPointcurl ||
-      middlecurl != prevMiddlecurl ||
-      ringcurl != prevRingcurl ||
-      pinkycurl != prevPinkycurl) {*/
-
     Serial.print("POT:");
     Serial.print(thumbcurl);  Serial.print(",");
     Serial.print(pointcurl);  Serial.print(",");
@@ -100,27 +95,67 @@ void loop()
     Serial.print(ringcurl);   Serial.print(",");
     Serial.println(pinkycurl);
 
-    /*prevThumbcurl  = thumbcurl;
-    prevPointcurl  = pointcurl;
-    prevMiddlecurl = middlecurl;
-    prevRingcurl   = ringcurl;
-    prevPinkycurl  = pinkycurl;*/
-  //}
+  // If locked, use last recorded angle from potentiometer
+  // If unlocked, use default rest position
+  int thumbAngle = lockThumb
+                   ? map(thumbLockAngle, 0, 3000, 180 - 1.5 * offset, 0 - 1.5 * offset)
+                   : DEFAULT_THUMB;
+  int pointAngle = lockPointer
+                   ? map(pointerLockAngle, 0, 3060, 180 - offset, 0 - offset)
+                   : DEFAULT_POINT;
+  int middleAngle = lockMid
+                   ? map(midLockAngle, 0, 3100, 180 - 5 * offset, 0 - 5 * offset)
+                   : DEFAULT_MIDDLE;
+  int ringAngle = lockRing
+                   ? map(ringLockAngle, 4095, 995, 0 + 3 * offset, 180 + 3 * offset)
+                   : DEFAULT_RING;
+  int pinkyAngle = lockPinky
+                   ? map(pinkyLockAngle, 4095, 780, 0 + 3 * offset, 180 + 3 * offset)
+                   : DEFAULT_PINKY;
 
-  // Servo mappings
-  /*thumbval  = map(thumbval, 0, 3000, 180 - 1.5 * offset, 0 - 1.5 * offset);
-  pointval  = map(pointval, 0, 3060, 180 - offset, 0 - offset);
-  middleval = map(middleval, 0, 3100, 180 - 5 * offset, 0 - 5 * offset);
-  ringval   = map(ringval, 4095, 995, 0 + 3 * offset, 180 + 3 * offset);
-  pinkyval  = map(pinkyval, 4095, 780, 0 + 3 * offset, 180 + 3 * offset);
-
-  // Move servos
-  thumbservo.write(thumbval);
-  pointservo.write(pointval);
-  middleservo.write(middleval);
-  ringservo.write(ringval);
-  pinkyservo.write(pinkyval);*/
-
+  // Write angles to servos
+  thumbservo.write(thumbAngle);
+  pointservo.write(pointAngle);
+  middleservo.write(middleAngle);
+  ringservo.write(ringAngle);
+  pinkyservo.write(pinkyAngle);
 
   delay(20); 
 }
+
+//Checks Serial to update Servos based on Unity write
+void checkSerial() {
+
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+    
+    if (input.startsWith("SERVO:")) {
+      int spaceIndex = input.indexOf(' ');
+      if (spaceIndex > 6) {
+        String name = input.substring(6, spaceIndex);
+        String state = input.substring(spaceIndex + 1);
+
+        bool lock = (state == "1");
+
+        if (name == "Thumb") {
+          if (lock && !lockThumb) thumbLockAngle = thumbval;
+          lockThumb = lock;
+        } else if (name == "Pointer") {
+          if (lock && !lockPointer) pointerLockAngle = pointval;
+          lockPointer = lock;
+        } else if (name == "Mid") {
+          if (lock && !lockMid) midLockAngle = middleval;
+          lockMid = lock;
+        } else if (name == "Ring") {
+          if (lock && !lockRing) ringLockAngle = ringval;
+          lockRing = lock;
+        } else if (name == "Pinky") {
+          if (lock && !lockPinky) pinkyLockAngle = pinkyval;
+          lockPinky = lock;
+        }
+      }
+    }
+  }
+}
+
